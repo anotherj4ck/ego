@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ego — test de liaison</title>
+<style>
+  :root { --bg:#0b0b0d; --fg:#d8d4cf; --dim:#77716b; --red:#e0302b; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--fg);
+         font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+         display:flex; align-items:center; justify-content:center; padding:16px; }
+  main { width:100%; max-width:640px; }
+  .lens { width:18px; height:18px; border-radius:50%; background:var(--red);
+          box-shadow:0 0 18px var(--red); margin:0 auto 24px; animation:pulse 2.4s ease-in-out infinite; }
+  .lens.busy { animation-duration:.6s; }
+  @keyframes pulse { 50% { transform:scale(.55); opacity:.6; } }
+  .sys { color:var(--dim); font-size:.85rem; }
+  #answer { min-height:4.5em; margin:16px 0 24px; line-height:1.6; white-space:pre-wrap; }
+  form { display:flex; gap:8px; }
+  input { flex:1; background:transparent; border:1px solid #333; color:var(--fg);
+          padding:10px; font:inherit; }
+  input:focus { outline:1px solid var(--red); }
+  button { background:var(--red); color:#fff; border:0; padding:10px 16px; font:inherit; cursor:pointer; }
+  button:disabled { opacity:.4; cursor:default; }
+  select { background:var(--bg); color:var(--dim); border:1px solid #333; font:inherit; margin-top:12px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="lens" id="lens"></div>
+  <p class="sys">∆ Calibrage terminé — une question autorisée.</p>
+  <p id="answer">Tu as droit à une question. Une seule.</p>
+  <form id="f">
+    <input id="q" maxlength="200" placeholder="Pose ta question à Ego…" autocomplete="off" required>
+    <button id="b">Envoyer</button>
+  </form>
+  <label class="sys">Verdict simulé :
+    <select id="v">
+      <option value="conforme">conforme</option>
+      <option value="surveillance" selected>surveillance</option>
+      <option value="anomalie">anomalie</option>
+    </select>
+  </label>
+</main>
+<script>
+  // ⚠ Remplace par l'adresse affichée par "npx wrangler deploy"
+  const WORKER_URL = "https://ego-worker.TON-SOUS-DOMAINE.workers.dev/ask";
+
+  const $ = (id) => document.getElementById(id);
+
+  // Affiche le texte lettre par lettre. textContent (et jamais innerHTML) :
+  // la réponse vient d'une IA, on ne l'interprète jamais comme du HTML.
+  async function type(text) {
+    $("answer").textContent = "";
+    for (const ch of text) {
+      $("answer").textContent += ch;
+      await new Promise((r) => setTimeout(r, 28));
+    }
+  }
+
+  $("f").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const question = $("q").value.trim();
+    if (!question) return;
+    $("b").disabled = true;
+    $("lens").classList.add("busy");
+    $("answer").textContent = "…";
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question, verdict: $("v").value }),
+      });
+      const data = await res.json();
+      await type(data.answer || "∆ Liaison interrompue.");
+    } catch {
+      await type("∆ Liaison interrompue.");
+    } finally {
+      $("lens").classList.remove("busy");
+      $("b").disabled = false; // en test on autorise plusieurs questions
+    }
+  });
+</script>
+</body>
+</html>

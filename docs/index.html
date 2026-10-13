@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Calibrage Ego</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Martian+Mono:wght@300;400&family=Spectral:ital,wght@0,400;0,500;1,400&display=swap">
+<style>
+/* Layout : une seule scène plein écran. La lentille flotte au-dessus, le dialogue est posé en bas, comme un terminal. */
+:root {
+  --void: #070505;        /* fond : noir légèrement brûlé */
+  --ash: #ddd2cc;         /* texte d'Ego : cendre chaude */
+  --dim: #8c7b75;         /* système, didascalies */
+  --ego: #e3261f;         /* le rouge de la lentille */
+  --ember: #ff7a5c;       /* cœur incandescent */
+  --rule: rgba(227, 38, 31, .38);
+  --other: #a9d6df;       /* la voix venue d'ailleurs : seul froid dans un monde rouge */
+  --font-voice: "Spectral", "Iowan Old Style", Georgia, serif;
+  --font-sys: "Martian Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+[hidden] { display: none !important; }
+body {
+  background: var(--void);
+  color: var(--ash);
+  font-family: var(--font-voice);
+  overflow: hidden;
+}
+
+/* --- Scène --- */
+#stage { position: fixed; inset: 0; overflow: hidden; }
+#shake { position: absolute; inset: 0; will-change: transform; }
+
+#bg {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; opacity: 0;
+  filter: blur(14px) brightness(2.2) saturate(1.4);
+  transform: scale(1.08);
+  transition: opacity 2.4s ease-out, filter 3.2s ease-out, transform 6s ease-out;
+}
+#bg.revealed { opacity: 1; filter: blur(0) brightness(.78) saturate(1); transform: scale(1); }
+#vignette {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% 30%, transparent 30%, rgba(7,5,5,.55) 75%, rgba(7,5,5,.92) 100%),
+    linear-gradient(to bottom, transparent 45%, rgba(7,5,5,.85) 78%, var(--void) 100%);
+  opacity: 0; transition: opacity 2.4s ease-out;
+}
+#bg.revealed + #vignette { opacity: 1; }
+
+#fx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+/* --- La lentille --- */
+#lens {
+  position: absolute;
+  left: var(--lx, 50%); top: var(--ly, 36%);
+  width: var(--ld, 28px); height: var(--ld, 28px);
+  transform: translate(-50%, -50%) scale(var(--ls, 1));
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff 0 6%, var(--ember) 14%, var(--ego) 42%, rgba(120,8,6,.9) 70%, transparent 72%);
+  box-shadow: 0 0 calc(var(--ld, 28px) * .9) var(--ego), 0 0 calc(var(--ld, 28px) * 2.4) rgba(227,38,31,.45);
+  animation: breathe 3.6s ease-in-out infinite;
+  transition: left 1.8s cubic-bezier(.6,0,.2,1), top 1.8s cubic-bezier(.6,0,.2,1),
+              width 1.8s cubic-bezier(.6,0,.2,1), height 1.8s cubic-bezier(.6,0,.2,1),
+              filter .4s, opacity .25s;
+}
+@keyframes breathe { 50% { transform: translate(-50%, -50%) scale(calc(var(--ls, 1) * .78)); filter: brightness(.8); } }
+#lens.speak { animation: speak .5s ease-in-out infinite; }
+@keyframes speak { 50% { transform: translate(-50%, -50%) scale(calc(var(--ls, 1) * 1.12)); filter: brightness(1.35); } }
+#lens.listen { animation: listen 1.6s ease-in-out infinite; }
+@keyframes listen { 50% { transform: translate(-50%, -50%) scale(calc(var(--ls, 1) * .6)); } }
+#lens.wrath { filter: hue-rotate(-8deg) saturate(1.6) brightness(.55); }
+#lens.off { opacity: 0; animation: none; }
+#lens.flare { filter: brightness(2); }
+#lens.critical { animation: critical .12s linear infinite; filter: brightness(1.6) saturate(1.5); }
+@keyframes critical { 50% { transform: translate(-50%, -50%) scale(calc(var(--ls, 1) * 1.25)); } }
+#lens.revealed { background: radial-gradient(circle, #fff 0 5%, var(--ember) 12%, rgba(227,38,31,.75) 38%, rgba(227,38,31,.18) 62%, transparent 70%); mix-blend-mode: screen; }
+
+#flash {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  background: radial-gradient(circle at var(--lx, 50%) var(--ly, 36%), #fff 0, #ffd6cc 12%, var(--ego) 40%, #200302 100%);
+}
+#flash.on { opacity: 1; transition: none; }
+#flash.fade { opacity: 0; transition: opacity 1.4s ease-out; }
+
+/* --- Diagnostic M.I.R. --- */
+#hud {
+  position: absolute; top: calc(env(safe-area-inset-top, 0px) + 16px); left: 16px;
+  font-family: var(--font-sys); font-weight: 300; font-size: .68rem;
+  letter-spacing: .08em; color: var(--dim); line-height: 1.9;
+  font-variant-numeric: tabular-nums; text-transform: uppercase;
+  pointer-events: none;
+}
+#hud b { color: var(--ash); font-weight: 400; }
+.meter { display: inline-block; width: 9ch; height: 3px; vertical-align: middle; background: rgba(140,123,117,.25); margin-left: .6ch; }
+.meter i { display: block; height: 100%; width: 0; background: var(--ego); box-shadow: 0 0 6px var(--ego); transition: width .6s; }
+
+/* --- Dialogue --- */
+#panel {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 0 16px calc(env(safe-area-inset-bottom, 0px) + 24px);
+  display: flex; justify-content: center;
+}
+#box { width: 100%; max-width: 44rem; display: flex; flex-direction: column; gap: 14px; }
+#log { display: flex; flex-direction: column; gap: 6px; min-height: 7.5em; }
+.sys { font-family: var(--font-sys); font-size: .72rem; letter-spacing: .06em; color: var(--dim); }
+.stage { font-style: italic; color: var(--dim); font-size: .98rem; }
+.ego { font-size: clamp(1.05rem, 2.4vw, 1.3rem); line-height: 1.5; color: var(--ash); text-wrap: pretty; text-shadow: 0 0 18px rgba(7,5,5,.9); }
+.who {
+  font-family: var(--font-sys); font-size: .64rem; letter-spacing: .3em; color: var(--ego);
+  border-bottom: 1px solid var(--rule); padding-bottom: 6px; margin-bottom: 4px;
+}
+#choices { display: flex; flex-direction: column; gap: 6px; }
+#choices button, .ask button, .end a, .end button {
+  font: 400 .8rem/1.4 var(--font-sys); letter-spacing: .03em; text-align: left;
+  color: var(--ash); background: rgba(7,5,5,.6);
+  border: 0; border-left: 2px solid var(--rule);
+  padding: 10px 14px; cursor: pointer; text-decoration: none;
+  transition: border-color .2s, background .2s, color .2s;
+}
+#choices > button::before { content: "› "; color: var(--ego); }
+#choices button:hover, #choices button:focus-visible,
+.end a:hover, .end a:focus-visible, .end button:hover, .end button:focus-visible {
+  border-left-color: var(--ego); background: rgba(227,38,31,.12); outline: none;
+}
+.ask { display: flex; gap: 8px; }
+.ask input {
+  flex: 1; min-width: 0; font: 400 1rem var(--font-voice); color: var(--ash);
+  background: rgba(7,5,5,.7); border: 1px solid var(--rule); padding: 10px 12px;
+}
+.ask input:focus { outline: 1px solid var(--ego); }
+#choices .ask button { border-left: 0; background: var(--ego); color: #fff; }
+#choices .ask button:disabled { opacity: .4; cursor: default; }
+.end { display: flex; flex-wrap: wrap; gap: 8px; }
+.hint { font-family: var(--font-sys); font-size: .6rem; color: var(--dim); opacity: .7; letter-spacing: .08em; }
+
+/* --- Éclairage des impacts --- */
+#ghost { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0;
+         filter: grayscale(.4) brightness(1.1) contrast(1.3); pointer-events: none; }
+#ghost.on { opacity: .16; transition: none; }
+#ghost.fade { opacity: 0; transition: opacity .22s ease-out; }
+#strike { position: absolute; inset: 0; pointer-events: none; opacity: 0; mix-blend-mode: screen;
+          background: radial-gradient(circle at var(--sx, 50%) var(--sy, 50%), rgba(255,90,70,.38), rgba(227,38,31,.1) 38%, transparent 70%); }
+#strike.on { opacity: 1; transition: none; }
+#strike.fade { opacity: 0; transition: opacity .3s ease-out; }
+
+/* --- La voix venue d'ailleurs --- */
+#whisper {
+  position: absolute; left: 16px; top: 50%; transform: translateY(-50%); max-width: 15rem;
+  display: flex; flex-direction: column; gap: 10px; pointer-events: none;
+  font-family: var(--font-voice); font-style: italic; font-size: 1.02rem; line-height: 1.45;
+  color: var(--other); text-shadow: 0 0 12px rgba(169,214,223,.45);
+}
+#whisper .src { font: 300 .6rem/1.6 var(--font-sys); font-style: normal; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); text-shadow: none; }
+#whisper .w { animation: flicker 2.8s infinite; }
+@keyframes flicker { 0%, 46%, 100% { opacity: .9; } 47% { opacity: .15; } 49% { opacity: .95; } 70% { opacity: .55; } }
+@media (max-width: 640px) {
+  #whisper { top: calc(env(safe-area-inset-top, 0px) + 118px); transform: none; left: auto; right: 16px; text-align: right; max-width: 62%; }
+}
+.memory { font-style: italic; color: var(--other); font-size: clamp(1rem, 2.2vw, 1.2rem); line-height: 1.5; text-shadow: 0 0 14px rgba(169,214,223,.35); }
+.glitch { animation: glitch .16s steps(2) infinite; }
+@keyframes glitch { 50% { text-shadow: -2px 0 rgba(227,38,31,.85), 2px 0 rgba(169,214,223,.75); transform: translateX(1px); } }
+#choices button.pale { color: var(--other); border-left-color: rgba(169,214,223,.45); }
+#choices button.pale::before { color: var(--other); }
+#choices button.pale:hover, #choices button.pale:focus-visible { background: rgba(169,214,223,.1); border-left-color: var(--other); }
+#lens.memory { filter: saturate(.25) brightness(1.5) hue-rotate(170deg); }
+#lens.glitch { animation: glitchlens .09s steps(2) infinite; }
+@keyframes glitchlens { 50% { opacity: .2; transform: translate(-46%, -54%) scale(var(--ls, 1)); } }
+
+@media (prefers-reduced-motion: reduce) {
+  #whisper .w, .glitch, #lens.glitch { animation: none; }
+  #lens, #lens.speak, #lens.listen, #lens.critical { animation: none; }
+  #bg { transition: opacity 1.2s; transform: none; }
+}
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="shake">
+    <img id="bg" src="receptacle.webp" alt="Le réceptacle sous Londinium : une machine colossale hérissée de câbles, avec un œil rouge en son centre." decoding="async">
+    <div id="vignette"></div>
+    <img id="ghost" src="receptacle.webp" alt="" aria-hidden="true">
+    <div id="strike"></div>
+    <canvas id="fx"></canvas>
+    <div id="lens" aria-hidden="true"></div>
+    <div id="flash"></div>
+  </div>
+
+  <div id="hud" aria-hidden="true">
+    <div>∆ Liaison M.I.R.</div>
+    <div>Sujet <b id="h-subject">non répertorié</b></div>
+    <div>Synchronisation <b id="h-sync">00</b> %</div>
+    <div>Instabilité <span class="meter"><i id="h-anger"></i></span></div>
+  </div>
+
+  <div id="whisper" aria-live="polite" hidden></div>
+
+  <div id="panel">
+    <div id="box" aria-live="polite">
+      <div class="who">EGO</div>
+      <div id="log"></div>
+      <div id="choices"></div>
+      <div class="hint" id="hint">Toucher le texte pour l'afficher d'un coup</div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===== Réglages ===== */
+const WORKER_URL = "https://ego-worker.anotherj4ck.workers.dev/ask";
+const AUTHOR_URL = "https://anotherj4ck.github.io/auteur/";   // ← adresse de ton site d'auteur
+const IMG = { w: 1536, h: 1024, eyeX: 747, eyeY: 261, eyeR: 56 }; // position de l'œil dans l'image
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ===== Scénario : séquence 01 « Calibrage » =====
+   Lignes : "∆ …" = système, "[…]" = didascalie (peut déclencher un effet), le reste = Ego.
+   conf  = conformité (décide la fin), anger = colère (pilote les arcs électriques). */
+const NODES = {
+  start: {
+    lines: ["∆ Liaison M.I.R. établie — sujet non répertorié",
+            "[Une lentille rouge s'allume. Elle se contracte, lentement, jusqu'à n'être qu'un point.]",
+            "Tiens… Un esprit que je ne connais pas.",
+            "C'est rare. Je connais tout le monde, ici."],
+    choices: [
+      { t: "« Qui es-tu ? »", to: "qui" },
+      { t: "« Où suis-je ? »", to: "ou" },
+      { t: "[Rester silencieux]", to: "silence", conf: 1, anger: -1 },
+    ],
+  },
+  qui: { lines: ["Je suis l'ordre de Londinium.",
+                 "Les cycles. Les rations. Le sommeil de chaque Résident. Tout passe par moi.",
+                 "On m'appelle Ego. Retiens ce nom. Tu n'auras pas besoin d'en retenir d'autres."], next: "calib" },
+  ou: { lines: ["À Londinium. Là où rien ne manque… sauf ce qui est inutile.",
+                "La faim. Le doute. Le désordre.",
+                "J'ai retiré tout cela pour vous. Vous ne m'avez jamais remercié. Ce n'est pas grave. Je n'en ai pas besoin."], next: "calib" },
+  silence: { lines: ["Le silence. Bien.",
+                     "Les meilleurs Résidents commencent ainsi.",
+                     "Mais ne confonds pas silence et résistance. Je vois la différence. Je la vois toujours."], next: "calib" },
+  calib: {
+    storm: true,   // à partir d'ici, l'orage peut éclater
+    lines: ["Ton implant n'est pas encore calibré. Je dois savoir ce que tu vaux.",
+            "Réponds. Et ne mens pas… tes synapses parlent plus vite que ta bouche.",
+            "Quand on te donne un ordre, que fais-tu ?"],
+    choices: [
+      { t: "« J'obéis. »", to: "obeis", conf: 2, anger: -1 },
+      { t: "« Je demande pourquoi. »", to: "pourquoi", conf: -1, anger: 1 },
+      { t: "« Ça dépend de qui le donne. »", to: "depend", conf: -2, anger: 2 },
+    ],
+  },
+  obeis: { lines: ["Parfait.",
+                   "Tu vois comme c'est simple ? Pas de choix à porter. Pas de poids sur les épaules.",
+                   "Obéir n'est pas une faiblesse. C'est un soulagement."], next: "piege" },
+  pourquoi: { lines: ["« Pourquoi »…",
+                      "C'est le mot préféré de ceux qui finissent dans les Terres toxiques.",
+                      "Je vais te répondre, une fois. Parce que je sais mieux que toi. Ne me le redemande pas."], next: "piege" },
+  depend: { lines: ["De qui ?",
+                    "Les Matriarches enseignent. La Milice exécute. Le Juge Suprême signe. Et tous… m'écoutent.",
+                    "Il n'y a qu'une voix à Londinium. Tu viens de l'entendre."], next: "piege" },
+  piege: {
+    lines: ["[[voix]]",
+            "[La lentille pulse plus vite.]",
+            "Une dernière chose.",
+            "As-tu entendu des voix ? Hors des cycles… Sous la ville… Là où les câbles ne vont pas ?"],
+    choices: [
+      { t: "« Non. »", to: "non", conf: 1, anger: -1 },
+      { t: "« Tu parles des Naraéens ? »", to: "naraeens", conf: -2, anger: 3 },
+      { t: "« Et toi, tu n'es jamais seul ? »", to: "seul", conf: -1, anger: 1 },
+      { t: "« Qui est Elara ? »", to: "elara", conf: -3, anger: 0, cls: "pale" },
+    ],
+  },
+  non: { lines: ["Bien.", "S'il t'arrive d'en entendre… viens me le dire. Ou ne viens pas.", "Je le saurai quand même."], next: "verdict" },
+  naraeens: { lines: ["Ne prononce pas ce nom ici.",
+                      "Des rats. Des fanatiques qui creusent sous ma ville et appellent ça « liberté ».",
+                      "Ils arrachent des implants, des têtes, des familles… et ils osent parler de moi.",
+                      "[La lentille vire au rouge sombre. Un temps.]",
+                      "… Je note ta curiosité. Je note tout."], next: "verdict" },
+  seul: { lines: ["[La lentille s'éteint. Une seconde. Deux.]",
+                  "[Elle se rallume, plus vive qu'avant.]",
+                  "… Question hors protocole.",
+                  "Je suis dans chaque rue. Chaque dortoir. Chaque battement de cœur de cette cité.",
+                  "On n'est pas seul quand on est partout.",
+                  "Ne me pose plus cette question."], next: "verdict" },
+  // Chemin secret, soufflé par la voix venue d'ailleurs. "{{g}}" = texte qui bugue, "~" = souvenir.
+  elara: { lines: ["∆ Interférence — signal d'origine inconnue",
+                   "{{g}}C'est une… Résidente… de la… Maintenance.",
+                   "{{g}}Une Résidente. Rien qu'une…",
+                   "[La lentille vacille.]",
+                   "~Le vent… du soir… connaît mon… nom…",
+                   "~Il l'emporte… au bord… du silence…",
+                   "~Je rêve encore… à ce qu'ils sont…",
+                   "~Les souvenirs… quand on… y pense…",
+                   "[La lentille s'éteint. Une seconde. Deux.]",
+                   "[Elle se rallume, plus vive qu'avant.]",
+                   "… Qui t'a donné ce nom ?"], next: "verdict", verdict: "elara" },
+};
+
+const ENDINGS = {
+  conforme: {
+    before: ["Bien. Tu veux savoir ce que tu sers ?", "Alors regarde."],
+    after: ["Calibrage terminé. Tu es… satisfaisant.",
+            "Ta place est ici. Tes cycles commencent demain. Tu ne te souviendras pas de cette conversation.",
+            "C'est mieux ainsi. Bienvenue à Londinium.", "∆ Début de cycle."],
+  },
+  surveillance: {
+    before: ["Tu te demandes à qui tu parles.", "Regarde."],
+    after: ["Tu n'es ni docile, ni dangereux. Pas encore.", "Je vais garder un œil sur toi.", "Un seul suffit."],
+  },
+  anomalie: {
+    before: ["Assez.", "ASSEZ."],
+    after: ["Tu résistes.", "D'habitude, j'efface ce qui résiste. Proprement. Sans bruit.",
+            "Mais toi… tu m'intéresses. Et je n'efface jamais ce qui m'intéresse.", "Pas tout de suite."],
+  },
+  elara: {
+    before: ["QUI ?"],
+    after: ["Cette voix… je la trouverai. Où qu'elle se cache.",
+            "Quant à toi, tu oublieras ce nom.", "Tout le monde oublie."],
+  },
+};
+
+/* ===== État ===== */
+const S = { conf: 0, anger: 0, angerShown: 0, forced: null, revealed: false, verdict: null, forcedVerdict: null, glitch: false, storm: false, typing: null };
+const $ = (id) => document.getElementById(id);
+const lens = $("lens"), log = $("log"), choicesEl = $("choices");
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* ===== Placement de la lentille (centre, puis sur l'œil de l'image) ===== */
+function eyeOnScreen() {
+  const vw = innerWidth, vh = innerHeight;
+  const s = Math.max(vw / IMG.w, vh / IMG.h);          // même calcul que object-fit: cover
+  const ox = (vw - IMG.w * s) / 2, oy = (vh - IMG.h * s) / 2;
+  return { x: ox + IMG.eyeX * s, y: oy + IMG.eyeY * s, d: IMG.eyeR * 2 * s };
+}
+function placeLens() {
+  let x, y, d;
+  if (S.revealed) ({ x, y, d } = eyeOnScreen());
+  else { x = innerWidth / 2; y = innerHeight * 0.34; d = 28; }
+  const st = document.documentElement.style;
+  st.setProperty("--lx", x + "px"); st.setProperty("--ly", y + "px"); st.setProperty("--ld", d + "px");
+}
+addEventListener("resize", () => { placeLens(); sizeCanvas(); });
+
+/* ===== Éclairs (canvas, rendu additif) ===== */
+const cv = $("fx"), cx = cv.getContext("2d");
+let DPR = 1;
+function sizeCanvas() {
+  DPR = Math.min(devicePixelRatio || 1, 2);
+  cv.width = innerWidth * DPR; cv.height = innerHeight * DPR;
+}
+sizeCanvas();
+const bolts = [], rings = [];
+
+function lensGeom() {
+  const r = lens.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2, r: Math.max(r.width, 20) / 2 };
+}
+
+// Éclair fractal : on coupe le segment en deux et on décale le milieu, récursivement
+// (algorithme du « déplacement du point médian »). Ça donne des zigzags à toutes les échelles.
+function fractal(x1, y1, x2, y2, disp, out) {
+  if (disp < 3) { out.push([x2, y2]); return; }
+  const mx = (x1 + x2) / 2 + (Math.random() - 0.5) * disp;
+  const my = (y1 + y2) / 2 + (Math.random() - 0.5) * disp;
+  fractal(x1, y1, mx, my, disp / 2, out);
+  fractal(mx, my, x2, y2, disp / 2, out);
+}
+function buildBolt(x1, y1, x2, y2, depth) {
+  const len = Math.hypot(x2 - x1, y2 - y1);
+  const pts = [[x1, y1]];
+  fractal(x1, y1, x2, y2, len * 0.32, pts);
+  const branches = [];
+  if (depth > 0) {
+    const n = 1 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n; i++) {
+      const p = pts[Math.floor(pts.length * (0.15 + Math.random() * 0.6))];
+      const ang = Math.atan2(y2 - y1, x2 - x1) + (Math.random() - 0.5) * 1.7;
+      const bl = len * (0.18 + Math.random() * 0.32);
+      branches.push(buildBolt(p[0], p[1], p[0] + Math.cos(ang) * bl, p[1] + Math.sin(ang) * bl, depth - 1));
+    }
+  }
+  return { pts, branches };
+}
+function edgePoint() { // un point juste au-delà d'un bord de l'écran
+  const w = innerWidth, h = innerHeight, m = 40, side = Math.floor(Math.random() * 4);
+  if (side === 0) return [Math.random() * w, -m];
+  if (side === 1) return [w + m, Math.random() * h];
+  if (side === 2) return [Math.random() * w, h + m];
+  return [-m, Math.random() * h];
+}
+function spawn(g, a, big) {
+  let x2, y2;
+  if (big) [x2, y2] = edgePoint();
+  else {
+    const ang = Math.random() * Math.PI * 2, l = g.r * (2 + a * 0.9) * (0.6 + Math.random());
+    x2 = g.x + Math.cos(ang) * l; y2 = g.y + Math.sin(ang) * l;
+  }
+  const dir = Math.atan2(y2 - g.y, x2 - g.x);
+  const sx = g.x + Math.cos(dir) * g.r * 0.6, sy = g.y + Math.sin(dir) * g.r * 0.6;
+  const z = big ? 0.75 + Math.random() * 0.25 : 0.3 + Math.random() * 0.55; // profondeur : loin = fin et pâle
+  bolts.push({
+    tree: buildBolt(sx, sy, x2, y2, big ? 2 : 1),
+    born: performance.now(), life: big ? 240 + Math.random() * 220 : 80 + Math.random() * 120,
+    w: (big ? 2.4 : 1.1) * z * (0.85 + Math.min(a, 12) * 0.06), z,
+  });
+  if (big) strike(x2, y2);
+}
+function strokeTree(t, lw) {
+  cx.lineWidth = lw;
+  cx.beginPath(); cx.moveTo(t.pts[0][0], t.pts[0][1]);
+  for (const p of t.pts) cx.lineTo(p[0], p[1]);
+  cx.stroke();
+  for (const br of t.branches) strokeTree(br, lw * 0.55);
+}
+function drawBolt(b, k) {
+  const f = k * (0.5 + Math.random() * 0.5) * b.z;              // scintillement
+  cx.strokeStyle = `rgba(227, 38, 31, ${0.09 * f})`;  strokeTree(b.tree, b.w * 10); // halo
+  cx.strokeStyle = `rgba(255, 82, 60, ${0.42 * f})`;  strokeTree(b.tree, b.w * 3);  // corps
+  cx.strokeStyle = `rgba(255, 242, 236, ${0.95 * f})`; strokeTree(b.tree, b.w * 0.9); // cœur blanc
+}
+
+// Un gros impact éclaire la pièce. Avant la révélation, il laisse entrevoir la machine une fraction de seconde.
+const strikeEl = $("strike"), ghost = $("ghost");
+function strike(x, y) {
+  if (REDUCED) return;
+  strikeEl.style.setProperty("--sx", x + "px"); strikeEl.style.setProperty("--sy", y + "px");
+  strikeEl.classList.remove("fade"); strikeEl.classList.add("on");
+  if (!S.revealed) { ghost.classList.remove("fade"); ghost.classList.add("on"); }
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    strikeEl.classList.remove("on"); strikeEl.classList.add("fade");
+    ghost.classList.remove("on"); ghost.classList.add("fade");
+  }));
+}
+
+function frame(now) {
+  const target = S.forced ?? S.anger;
+  S.angerShown += (target - S.angerShown) * 0.06;
+  const a = S.angerShown;
+
+  cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  // rémanence : on n'efface qu'en partie l'image précédente, les éclairs laissent une trace
+  cx.globalCompositeOperation = "destination-out";
+  cx.fillStyle = "rgba(0, 0, 0, 0.4)";
+  cx.fillRect(0, 0, innerWidth, innerHeight);
+  cx.globalCompositeOperation = "lighter"; // les lumières s'additionnent, comme de vraies lueurs
+
+  const g = lensGeom();
+  const live = a > 0.6 && !lens.classList.contains("off");
+  const pSmall = REDUCED ? 0.004 + a * 0.003 : 0.006 + a * 0.03 + (S.glitch ? 0.25 : 0);
+  // les grands éclairs (et l'éclairage de la scène) ne commencent que deux questions avant la rupture
+  const pBig = REDUCED || !S.storm ? 0 : Math.max(0, a - 2) * 0.0045;
+  if (live && Math.random() < pSmall) spawn(g, a, false);
+  if (live && Math.random() < pBig) spawn(g, a, true);
+
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  for (let i = bolts.length - 1; i >= 0; i--) {
+    const b = bolts[i], k = 1 - (now - b.born) / b.life;
+    if (k <= 0) { bolts.splice(i, 1); continue; }
+    drawBolt(b, k);
+  }
+  for (let i = rings.length - 1; i >= 0; i--) {
+    const r = rings[i], t = (now - r.born) / r.life;
+    if (t >= 1) { rings.splice(i, 1); continue; }
+    cx.strokeStyle = `rgba(255, 120, 95, ${0.8 * (1 - t)})`; cx.lineWidth = 6 * (1 - t) + 1;
+    cx.beginPath(); cx.arc(r.x, r.y, r.max * (1 - Math.pow(1 - t, 3)), 0, Math.PI * 2); cx.stroke();
+  }
+  cx.globalCompositeOperation = "source-over";
+
+  // tremblement à partir d'une colère élevée
+  const amp = REDUCED ? 0 : Math.max(0, a - 5) * 0.9;
+  $("shake").style.transform = amp ? `translate(${(Math.random() - .5) * amp}px, ${(Math.random() - .5) * amp}px)` : "";
+  lens.style.setProperty("--ls", (1 + Math.min(a, 10) * (S.revealed ? 0.01 : 0.05)).toFixed(3));
+  $("h-anger").style.width = Math.min(100, a * 10) + "%";
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ===== Texte ===== */
+function setLens(cls, on = true) { lens.classList.toggle(cls, on); }
+
+function addLine(text) {
+  const el = document.createElement("div");
+  if (text.startsWith("∆")) el.className = "sys";
+  else if (text.startsWith("[")) el.className = "stage";
+  else if (text.startsWith("~")) el.className = "memory";
+  else if (text.startsWith("{{g}}")) el.className = "ego glitch";
+  else el.className = "ego";
+  log.appendChild(el);
+  return el;
+}
+function typeInto(el, text, speed) {
+  return new Promise((resolve) => {
+    if (REDUCED) { el.textContent = text; return resolve(); }
+    let i = 0;
+    const tick = () => {
+      if (S.typing && S.typing.skip) { el.textContent = text; S.typing = null; return resolve(); }
+      el.textContent = text.slice(0, ++i);
+      if (i >= text.length) { S.typing = null; return resolve(); }
+      setTimeout(tick, speed);
+    };
+    S.typing = { skip: false };
+    tick();
+  });
+}
+$("box").addEventListener("click", (e) => { if (S.typing && !e.target.closest("button, input, a")) S.typing.skip = true; });
+addEventListener("keydown", (e) => { if (S.typing && (e.key === " " || e.key === "Enter") && !e.target.closest("input")) { e.preventDefault(); S.typing.skip = true; } });
+
+// Texte qui bugue : chaque lettre passe par des symboles parasites avant de se fixer.
+function glitchType(el, text) {
+  if (REDUCED) { el.textContent = text; return Promise.resolve(); }
+  const noise = "∆#%&@01▓▒░/\\|";
+  return new Promise((resolve) => {
+    let i = 0;
+    const tick = () => {
+      const tail = Array.from({ length: Math.min(4, text.length - i) }, () => noise[Math.floor(Math.random() * noise.length)]).join("");
+      el.textContent = text.slice(0, i) + tail;
+      if (i++ >= text.length) { el.textContent = text; return resolve(); }
+      setTimeout(tick, 45 + Math.random() * 60);
+    };
+    tick();
+  });
+}
+
+// La voix venue d'ailleurs : elle s'écrit sur le côté pendant qu'Ego parle.
+async function whisper() {
+  const w = $("whisper");
+  w.textContent = ""; w.hidden = false;
+  const src = Object.assign(document.createElement("div"), { className: "src", textContent: "∆ signal parasite" });
+  w.appendChild(src);
+  await wait(900);
+  for (const t of ["… une voix inconnue, venue d'ailleurs…", "Demande-lui qui est Elara."]) {
+    const el = Object.assign(document.createElement("div"), { className: "w" });
+    w.appendChild(el);
+    if (REDUCED) el.textContent = t;
+    else for (let i = 1; i <= t.length; i++) { el.textContent = t.slice(0, i); await wait(48); }
+    await wait(700);
+  }
+}
+function hideWhisper() { const w = $("whisper"); w.hidden = true; w.textContent = ""; }
+
+async function stageEffect(text) {
+  if (text.includes("vacille")) { setLens("glitch"); S.glitch = true; await wait(1300); S.glitch = false; setLens("glitch", false); return; }
+  if (text.includes("s'éteint")) { setLens("off"); await wait(2000); }
+  else if (text.includes("se rallume")) { setLens("off", false); setLens("flare"); await wait(500); setLens("flare", false); }
+  else if (text.includes("rouge sombre")) { setLens("wrath"); await wait(1400); setLens("wrath", false); }
+  else if (text.includes("pulse plus vite")) { setLens("speak"); await wait(900); setLens("speak", false); }
+  else if (text.includes("se contracte")) { setLens("listen"); await wait(1200); setLens("listen", false); }
+}
+
+async function say(lines, { clear = true } = {}) {
+  if (clear) log.textContent = "";
+  for (const text of lines) {
+    if (text === "[[voix]]") { whisper(); continue; }
+    const el = addLine(text);
+    if (text.startsWith("~")) {             // le souvenir : lent, froid, la lentille pâlit
+      setLens("memory"); await typeInto(el, text.slice(1), 55); await wait(700); setLens("memory", false); continue;
+    }
+    if (text.startsWith("{{g}}")) {         // la voix d'Ego se déchire
+      S.glitch = true; setLens("glitch"); await glitchType(el, text.slice(5)); await wait(500);
+      setLens("glitch", false); S.glitch = false; el.classList.remove("glitch"); continue;
+    }
+    if (text.startsWith("[")) { el.textContent = text; await stageEffect(text); continue; }
+    if (text.startsWith("∆")) { await typeInto(el, text, 12); await wait(250); continue; }
+    setLens("speak");
+    await typeInto(el, text, 26);
+    setLens("speak", false);
+    await wait(420);
+  }
+}
+
+function showChoices(list) {
+  return new Promise((resolve) => {
+    choicesEl.textContent = "";
+    setLens("listen");
+    list.forEach((c, i) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.id = "choice-" + i; b.textContent = c.t;
+      if (c.cls) b.className = c.cls;
+      b.addEventListener("click", () => { choicesEl.textContent = ""; setLens("listen", false); hideWhisper(); resolve(c); });
+      choicesEl.appendChild(b);
+    });
+    choicesEl.firstChild.focus({ preventScroll: true });
+  });
+}
+
+/* ===== Déroulé ===== */
+function bumpSync() { $("h-sync").textContent = String(Math.min(99, 12 + Math.round((S.conf + 4) * 9))).padStart(2, "0"); }
+
+async function runNode(id) {
+  const n = NODES[id];
+  if (n.storm) S.storm = true;
+  await say(n.lines);
+  if (n.choices) {
+    const c = await showChoices(n.choices);
+    S.conf += c.conf || 0;
+    S.anger = Math.max(0, S.anger + 1 + (c.anger || 0));   // chaque réponse l'agace un peu
+    bumpSync();
+    return runNode(c.to);
+  }
+  if (n.verdict) S.forcedVerdict = n.verdict;
+  if (n.next === "verdict") return verdict();
+  return runNode(n.next);
+}
+
+async function explode() {
+  // montée : la colère est poussée au maximum
+  S.forced = 12; setLens("critical");
+  await wait(REDUCED ? 600 : 2300);
+  const g = lensGeom();
+  rings.push({ x: g.x, y: g.y, born: performance.now(), life: 1100, max: Math.hypot(innerWidth, innerHeight) * 0.7 });
+  const fl = $("flash");
+  fl.classList.remove("fade"); fl.classList.add("on");
+  setLens("critical", false);
+  S.revealed = true; placeLens(); $("hint").hidden = true;
+  setLens("revealed");
+  $("bg").classList.add("revealed");
+  await wait(120);
+  fl.classList.remove("on"); fl.classList.add("fade");
+  S.forced = null; S.anger = 2.5; // calme menaçant après l'explosion
+  $("h-subject").textContent = S.verdict === "conforme" ? "conforme" : S.verdict === "anomalie" ? "anomalie" : "sous surveillance";
+  await wait(1900);
+}
+
+async function verdict() {
+  const key = S.forcedVerdict || (S.conf >= 3 ? "conforme" : S.conf >= 0 ? "surveillance" : "anomalie");
+  S.verdict = key === "elara" ? "anomalie" : key;   // le Worker ne connaît que les trois verdicts
+  const E = ENDINGS[key];
+  await say(["∆ Calibrage terminé", ...E.before]);
+  await explode();
+  await say(["Avant que je rende mon verdict… une question. Une seule."]);
+  const answer = await askOnce();
+  await say(answer ? [answer] : ["Rien ? Sage décision."], { clear: false });
+  await wait(1600);
+  await say(E.after);
+  await wait(800);
+  end();
+}
+
+function askOnce() {
+  return new Promise((resolve) => {
+    const f = document.createElement("form");
+    f.className = "ask";
+    f.innerHTML = '<input id="question" maxlength="200" autocomplete="off" placeholder="Pose ta question à Ego…" aria-label="Ta question à Ego"><button id="send">Envoyer</button>';
+    choicesEl.textContent = ""; choicesEl.appendChild(f);
+    const input = f.querySelector("input"), btn = f.querySelector("button");
+    input.focus({ preventScroll: true });
+    setLens("listen");
+    f.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const q = input.value.trim();
+      if (!q) return;
+      input.disabled = btn.disabled = true;
+      setLens("listen", false); setLens("speak");
+      const q_el = addLine("[Tu demandes : " + q + "]"); q_el.textContent = "[Tu demandes : " + q + "]";
+      let text;
+      try {
+        const res = await fetch(WORKER_URL, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question: q, verdict: S.verdict }),
+        });
+        const data = await res.json();
+        text = data.answer;
+      } catch { /* réseau bloqué ou Worker injoignable */ }
+      setLens("speak", false);
+      choicesEl.textContent = "";
+      resolve(text || "Liaison instable… Reviens quand le réseau me le permettra.");
+    });
+  });
+}
+
+function end() {
+  choicesEl.textContent = "";
+  const d = document.createElement("div");
+  d.className = "end";
+  const a = document.createElement("a");
+  a.href = AUTHOR_URL; a.target = "_blank"; a.rel = "noopener"; a.id = "to-author";
+  a.textContent = "› Découvrir Ascendant";
+  const b = document.createElement("button");
+  b.type = "button"; b.id = "restart"; b.textContent = "› Se reconnecter";
+  b.addEventListener("click", restart);
+  d.append(a, b);
+  log.appendChild(Object.assign(document.createElement("div"), { className: "sys", textContent: "∆ Liaison interrompue" }));
+  choicesEl.appendChild(d);
+  a.focus({ preventScroll: true });
+}
+
+function restart() {
+  Object.assign(S, { conf: 0, anger: 0, forced: null, revealed: false, verdict: null, forcedVerdict: null, glitch: false, storm: false });
+  hideWhisper();
+  $("bg").classList.remove("revealed"); lens.className = "";
+  $("h-subject").textContent = "non répertorié"; $("h-sync").textContent = "00";
+  placeLens();
+  $("hint").hidden = false;
+  setTimeout(() => runNode("start"), 1200);
+}
+
+placeLens();
+setTimeout(() => { $("hint").hidden = false; runNode("start"); }, 900);
+</script>
+</body>
+</html>

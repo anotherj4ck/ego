@@ -1,0 +1,19 @@
+{
+  "name": "ego-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Relais Cloudflare Worker + Workers AI pour le chatbot Ego (univers Ascendant)",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "logs": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^4.36.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "workerd@1.20261006.1": true
+  }
+}

@@ -1,0 +1,15 @@
+# Dépendances et fichiers générés
+node_modules/
+.wrangler/
+
+# Secrets locaux (au cas où on en ajoute un jour)
+.dev.vars
+.env
+
+# Sorties de test
+worker/reponses-ego*.txt
+
+# Système
+Thumbs.db
+desktop.ini
+*.log

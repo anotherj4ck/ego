@@ -1,0 +1,29 @@
+{
+  // Nom du Worker : l'adresse sera https://ego-worker.<ton-sous-domaine>.workers.dev
+  "name": "ego-worker",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+
+  // Accès à Workers AI (pas de clé : c'est rattaché à ton compte Cloudflare)
+  "ai": {
+    "binding": "AI"
+  },
+
+  // Limite de débit : 5 questions par minute et par visiteur
+  "ratelimits": [
+    {
+      "name": "EGO_RATE_LIMITER",
+      "namespace_id": "4271",
+      "simple": { "limit": 5, "period": 60 }
+    }
+  ],
+
+  // Sites autorisés à appeler le Worker depuis un navigateur (séparés par des virgules).
+  // Remplace/complète avec l'adresse de ton portfolio, ex. https://anotherj4ck.github.io
+  "vars": {
+    "ALLOWED_ORIGINS": "http://localhost:8000,https://anotherj4ck.github.io"
+  },
+
+  // Journaux consultables dans le tableau de bord Cloudflare
+  "observability": { "enabled": true }
+}
