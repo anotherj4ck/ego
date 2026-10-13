@@ -34,9 +34,10 @@ body {
 #stage { position: fixed; inset: 0; overflow: hidden; }
 #shake { position: absolute; inset: 0; will-change: transform; }
 
+/* Les deux images sont dimensionnées en JavaScript (fonction layoutScene) pour que l'œil tombe sous la lentille. */
+#bg, #ghost { position: absolute; max-width: none; }
 #bg {
-  position: absolute; inset: 0; width: 100%; height: 100%;
-  object-fit: cover; opacity: 0;
+  opacity: 0;
   filter: blur(14px) brightness(2.2) saturate(1.4);
   transform: scale(1.08);
   transition: opacity 2.4s ease-out, filter 3.2s ease-out, transform 6s ease-out;
@@ -138,7 +139,7 @@ body {
 .hint { font-family: var(--font-sys); font-size: .6rem; color: var(--dim); opacity: .7; letter-spacing: .08em; }
 
 /* --- Éclairage des impacts --- */
-#ghost { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0;
+#ghost { opacity: 0;
          filter: grayscale(.4) brightness(1.1) contrast(1.3); pointer-events: none; }
 #ghost.on { opacity: .16; transition: none; }
 #ghost.fade { opacity: 0; transition: opacity .22s ease-out; }
@@ -213,7 +214,9 @@ body {
 /* ===== Réglages ===== */
 const WORKER_URL = "https://ego-worker.anotherj4ck.workers.dev/ask";
 const AUTHOR_URL = "https://anotherj4ck.github.io/auteur/";   // ← adresse de ton site d'auteur
-const IMG = { w: 1536, h: 1024, eyeX: 747, eyeY: 261, eyeR: 56 }; // position de l'œil dans l'image
+// Position de l'œil dans l'image, en fraction de sa largeur/hauteur (indépendant de la résolution).
+const IMG = { ratio: 1, eyeX: 0.5, eyeY: 0.3264, eyeR: 0.0494 };
+const LENS = { x: 0.5, y: 0.34 }; // place de la lentille à l'écran (fraction de la fenêtre)
 const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /* ===== Scénario : séquence 01 « Calibrage » =====
@@ -328,18 +331,32 @@ const lens = $("lens"), log = $("log"), choicesEl = $("choices");
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ===== Placement de la lentille (centre, puis sur l'œil de l'image) ===== */
-function eyeOnScreen() {
+// Cale l'image pour que son œil soit exactement sous la lentille, en la couvrant entièrement :
+// on cherche la plus petite échelle qui remplit l'écran sur les quatre côtés autour de ce point.
+let scene = { d: 0 };
+function layoutScene() {
   const vw = innerWidth, vh = innerHeight;
-  const s = Math.max(vw / IMG.w, vh / IMG.h);          // même calcul que object-fit: cover
-  const ox = (vw - IMG.w * s) / 2, oy = (vh - IMG.h * s) / 2;
-  return { x: ox + IMG.eyeX * s, y: oy + IMG.eyeY * s, d: IMG.eyeR * 2 * s };
+  const tx = vw * LENS.x, ty = vh * LENS.y;
+  const ex = IMG.eyeX, ey = IMG.eyeY;           // en fraction de la largeur (w) et de la hauteur (h = w / ratio)
+  const w = Math.max(
+    tx / ex,                                    // assez à gauche de l'œil
+    (vw - tx) / (1 - ex),                       // assez à droite
+    (ty / ey) * IMG.ratio,                      // assez au-dessus
+    ((vh - ty) / (1 - ey)) * IMG.ratio          // assez en dessous
+  );
+  const h = w / IMG.ratio;
+  const left = tx - ex * w, top = ty - ey * h;
+  for (const img of [$("bg"), $("ghost")]) {
+    Object.assign(img.style, { left: left + "px", top: top + "px", width: w + "px", height: h + "px",
+                               transformOrigin: `${ex * w}px ${ey * h}px` }); // le zoom de révélation reste centré sur l'œil
+  }
+  scene = { x: tx, y: ty, d: IMG.eyeR * 2 * w };
 }
 function placeLens() {
-  let x, y, d;
-  if (S.revealed) ({ x, y, d } = eyeOnScreen());
-  else { x = innerWidth / 2; y = innerHeight * 0.34; d = 28; }
+  layoutScene();
+  const d = S.revealed ? scene.d : 28;        // la lentille ne bouge plus : elle grandit jusqu'à la taille de l'œil
   const st = document.documentElement.style;
-  st.setProperty("--lx", x + "px"); st.setProperty("--ly", y + "px"); st.setProperty("--ld", d + "px");
+  st.setProperty("--lx", scene.x + "px"); st.setProperty("--ly", scene.y + "px"); st.setProperty("--ld", d + "px");
 }
 addEventListener("resize", () => { placeLens(); sizeCanvas(); });
 
